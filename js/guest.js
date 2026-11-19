@@ -79,7 +79,30 @@ function renderNavTabs() {
   ).join('');
 }
 
-function renderDashboardPage(container) {
+// Stay place/map/coordinator fall back to the admin-wide default in
+// dr_travel_note whenever a family doesn't have its own override set -
+// covers the common case of one venue/stay/coordinator for everyone,
+// while still letting a specific family be pointed elsewhere.
+let _commonTravelNote = null;
+async function getCommonTravelNote() {
+  if (_commonTravelNote) return _commonTravelNote;
+  const { data } = await db.from('dr_travel_note').select('*').eq('id', 1).maybeSingle();
+  _commonTravelNote = data || {};
+  return _commonTravelNote;
+}
+
+async function getEffectiveStayInfo() {
+  const note = await getCommonTravelNote();
+  return {
+    name: currentFamily.stay_place_name || note.stay_place_name || null,
+    link: currentFamily.stay_map_link || note.stay_map_link || null,
+    coordName: currentFamily.stay_coordinator_name || note.stay_coordinator_name || null,
+    coordPhone: currentFamily.stay_coordinator_phone || note.stay_coordinator_phone || null
+  };
+}
+
+async function renderDashboardPage(container) {
+  const stay = await getEffectiveStayInfo();
   container.innerHTML = `
     <div class="wedding-banner">
       <img class="banner-bugle" src="icons/bugle-left.png" alt="">
@@ -90,14 +113,14 @@ function renderDashboardPage(container) {
       </div>
       <img class="banner-bugle" src="icons/bugle-right.png" alt="">
     </div>
-    ${(currentFamily.stay_place_name || currentFamily.stay_map_link) ? `
+    ${(stay.name || stay.link) ? `
     <div class="card">
       <div class="card-title">🏨 Your Stay</div>
-      ${currentFamily.stay_place_name ? `<div class="ev-meta">${escapeHtml(currentFamily.stay_place_name)}</div>` : ''}
-      <div id="dashboard-stay-coordinator"></div>
-      ${currentFamily.stay_map_link ? `
+      ${stay.name ? `<div class="ev-meta">${escapeHtml(stay.name)}</div>` : ''}
+      ${stay.coordPhone ? `<div class="ev-meta">📞 ${escapeHtml(stay.coordName || 'Coordinator')}: <a href="tel:${escapeHtml(stay.coordPhone)}">${escapeHtml(stay.coordPhone)}</a></div>` : ''}
+      ${stay.link ? `
       <div class="form-hint" style="margin-top:8px;">Please reach here</div>
-      <div class="ev-links"><a class="ev-link-btn" href="${escapeHtml(currentFamily.stay_map_link)}" target="_blank" rel="noopener">🗺️ View on Map</a></div>
+      <div class="ev-links"><a class="ev-link-btn" href="${escapeHtml(stay.link)}" target="_blank" rel="noopener">🗺️ View on Map</a></div>
       ` : ''}
     </div>
     ` : ''}
@@ -114,19 +137,6 @@ function renderDashboardPage(container) {
     </div>
   `;
   renderContactCard();
-  renderDashboardStayCoordinator();
-}
-
-async function renderDashboardStayCoordinator() {
-  const el = document.getElementById('dashboard-stay-coordinator');
-  if (!el) return;
-  let coordName = currentFamily.stay_coordinator_name;
-  let coordPhone = currentFamily.stay_coordinator_phone;
-  if (!coordPhone) {
-    const { data: note } = await db.from('dr_travel_note').select('stay_coordinator_name, stay_coordinator_phone').eq('id', 1).maybeSingle();
-    if (note) { coordName = coordName || note.stay_coordinator_name; coordPhone = coordPhone || note.stay_coordinator_phone; }
-  }
-  el.innerHTML = coordPhone ? `<div class="ev-meta">📞 ${escapeHtml(coordName || 'Coordinator')}: <a href="tel:${escapeHtml(coordPhone)}">${escapeHtml(coordPhone)}</a></div>` : '';
 }
 
 function goTab(tabId) {
@@ -196,14 +206,7 @@ async function renderHomePage(container) {
 
 // ---------- My Stay (accommodation: place, map, rooms, coordinator) ----------
 async function renderStayPage(container) {
-  const name = currentFamily.stay_place_name;
-  const link = currentFamily.stay_map_link;
-  let coordName = currentFamily.stay_coordinator_name;
-  let coordPhone = currentFamily.stay_coordinator_phone;
-  if (!coordPhone) {
-    const { data: note } = await db.from('dr_travel_note').select('stay_coordinator_name, stay_coordinator_phone').eq('id', 1).maybeSingle();
-    if (note) { coordName = coordName || note.stay_coordinator_name; coordPhone = coordPhone || note.stay_coordinator_phone; }
-  }
+  const { name, link, coordName, coordPhone } = await getEffectiveStayInfo();
   const members = currentFamily.members || [];
 
   container.innerHTML = `

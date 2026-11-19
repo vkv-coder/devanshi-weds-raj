@@ -386,6 +386,9 @@ async function renderTravelTab(container) {
       <div class="form-group"><label>Nearest Railway Station</label><input type="text" id="note-railway" placeholder="e.g. Mandsaur Railway Station"></div>
       <div class="form-group"><label>Railway Station → Venue (Google Maps link)</label><input type="url" id="note-railway-venue" placeholder="https://maps.app.goo.gl/..."></div>
       <div class="form-group"><label>Railway Station → Stay (only if different from venue)</label><input type="url" id="note-railway-stay" placeholder="https://maps.app.goo.gl/..."></div>
+      <div class="form-hint" style="margin-top:10px;margin-bottom:4px;">Default Venue/Stay - shown to every family unless that specific family has its own stay place/link set under Families (e.g. for a different hotel)</div>
+      <div class="form-group"><label>Venue/Stay Name</label><input type="text" id="note-stay-name" placeholder="e.g. Hotel Grand Mahal"></div>
+      <div class="form-group"><label>Venue/Stay Google Maps Link</label><input type="url" id="note-stay-link" placeholder="https://maps.app.goo.gl/..."></div>
       <div class="form-hint" style="margin-top:10px;margin-bottom:4px;">Default Stay Coordinator - shown to every family unless that specific family has its own coordinator set under Families (e.g. for a different pickup/travel arrangement)</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <div class="form-group" style="flex:1;min-width:140px;"><label>Coordinator Name</label><input type="text" id="note-coord-name" placeholder="e.g. Rahul"></div>
@@ -484,6 +487,8 @@ async function loadTravelNote() {
   document.getElementById('note-railway-stay').value = data.railway_to_stay_link || '';
   document.getElementById('note-coord-name').value = data.stay_coordinator_name || '';
   document.getElementById('note-coord-phone').value = data.stay_coordinator_phone || '';
+  document.getElementById('note-stay-name').value = data.stay_place_name || '';
+  document.getElementById('note-stay-link').value = data.stay_map_link || '';
 }
 
 async function saveTravelNote() {
@@ -499,7 +504,9 @@ async function saveTravelNote() {
     p_railway_to_venue_link: document.getElementById('note-railway-venue').value.trim() || null,
     p_railway_to_stay_link: document.getElementById('note-railway-stay').value.trim() || null,
     p_stay_coordinator_name: document.getElementById('note-coord-name').value.trim() || null,
-    p_stay_coordinator_phone: document.getElementById('note-coord-phone').value.trim() || null
+    p_stay_coordinator_phone: document.getElementById('note-coord-phone').value.trim() || null,
+    p_stay_place_name: document.getElementById('note-stay-name').value.trim() || null,
+    p_stay_map_link: document.getElementById('note-stay-link').value.trim() || null
   });
   if (error) { errEl.textContent = error.message; return; }
   showToast('✅ Saved');
