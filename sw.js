@@ -1,4 +1,4 @@
-const CACHE_NAME = 'devanshi-raj-v1';
+const CACHE_NAME = 'devanshi-raj-v2';
 const SHELL_FILES = [
   '/index.html',
   '/admin.html',

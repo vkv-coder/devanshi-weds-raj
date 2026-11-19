@@ -33,6 +33,28 @@ body {
 .screen { display: none; }
 .screen.active { display: block; }
 
+/* ========== FALLING FLOWER PETALS ========== */
+.petals { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 999; }
+.petal { position: absolute; top: -10%; opacity: 0.9; animation: petal-fall linear infinite; }
+@keyframes petal-fall {
+  0% { transform: translateY(-10vh) translateX(0) rotate(0deg); }
+  100% { transform: translateY(110vh) translateX(var(--drift, 30px)) rotate(360deg); }
+}
+.petal:nth-child(1) { left: 2%; font-size: 20px; animation-duration: 11s; animation-delay: 0s; --drift: 25px; }
+.petal:nth-child(2) { left: 10%; font-size: 15px; animation-duration: 9s; animation-delay: 2s; --drift: -20px; }
+.petal:nth-child(3) { left: 20%; font-size: 22px; animation-duration: 13s; animation-delay: 4.5s; --drift: 15px; }
+.petal:nth-child(4) { left: 30%; font-size: 17px; animation-duration: 10s; animation-delay: 1s; --drift: -30px; }
+.petal:nth-child(5) { left: 40%; font-size: 24px; animation-duration: 14s; animation-delay: 6s; --drift: 20px; }
+.petal:nth-child(6) { left: 50%; font-size: 16px; animation-duration: 8.5s; animation-delay: 3s; --drift: -15px; }
+.petal:nth-child(7) { left: 58%; font-size: 21px; animation-duration: 12s; animation-delay: 0.5s; --drift: 35px; }
+.petal:nth-child(8) { left: 68%; font-size: 18px; animation-duration: 9.5s; animation-delay: 5s; --drift: -25px; }
+.petal:nth-child(9) { left: 76%; font-size: 23px; animation-duration: 15s; animation-delay: 2.5s; --drift: 10px; }
+.petal:nth-child(10) { left: 84%; font-size: 16px; animation-duration: 10.5s; animation-delay: 7s; --drift: -20px; }
+.petal:nth-child(11) { left: 92%; font-size: 20px; animation-duration: 11.5s; animation-delay: 1.5s; --drift: 30px; }
+.petal:nth-child(12) { left: 96%; font-size: 17px; animation-duration: 13.5s; animation-delay: 4s; --drift: -10px; }
+.petal:nth-child(13) { left: 45%; font-size: 19px; animation-duration: 16s; animation-delay: 8s; --drift: -35px; }
+.petal:nth-child(14) { left: 15%; font-size: 15px; animation-duration: 10s; animation-delay: 6.5s; --drift: 18px; }
+
 #entry-screen {
   min-height: 100vh;
   display: flex;
