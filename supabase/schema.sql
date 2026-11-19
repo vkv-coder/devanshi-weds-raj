@@ -16,7 +16,9 @@ create table if not exists dr_families (
   stay_place_name text,
   stay_map_link text,
   stay_coordinator_name text,
-  stay_coordinator_phone text
+  stay_coordinator_phone text,
+  stay_coordinator_name2 text,
+  stay_coordinator_phone2 text
 );
 
 create table if not exists dr_members (
@@ -125,6 +127,8 @@ create table if not exists dr_travel_note (
   stay_coordinator_phone text,
   stay_place_name text,
   stay_map_link text,
+  stay_coordinator_name2 text,
+  stay_coordinator_phone2 text,
   constraint dr_travel_note_single_row check (id = 1)
 );
 
@@ -664,7 +668,8 @@ grant execute on function dr_admin_set_room(uuid, uuid, text) to anon, authentic
 
 create or replace function dr_admin_set_family_stay(
   p_token uuid, p_code text, p_stay_place_name text, p_stay_map_link text,
-  p_stay_coordinator_name text default null, p_stay_coordinator_phone text default null
+  p_stay_coordinator_name text default null, p_stay_coordinator_phone text default null,
+  p_stay_coordinator_name2 text default null, p_stay_coordinator_phone2 text default null
 )
 returns void
 language plpgsql
@@ -675,12 +680,13 @@ begin
   perform dr_assert_admin(p_token);
   update dr_families set
     stay_place_name = p_stay_place_name, stay_map_link = p_stay_map_link,
-    stay_coordinator_name = p_stay_coordinator_name, stay_coordinator_phone = p_stay_coordinator_phone
+    stay_coordinator_name = p_stay_coordinator_name, stay_coordinator_phone = p_stay_coordinator_phone,
+    stay_coordinator_name2 = p_stay_coordinator_name2, stay_coordinator_phone2 = p_stay_coordinator_phone2
   where code = lower(trim(p_code));
 end;
 $$;
-revoke all on function dr_admin_set_family_stay(uuid, text, text, text, text, text) from public;
-grant execute on function dr_admin_set_family_stay(uuid, text, text, text, text, text) to anon, authenticated;
+revoke all on function dr_admin_set_family_stay(uuid, text, text, text, text, text, text, text) from public;
+grant execute on function dr_admin_set_family_stay(uuid, text, text, text, text, text, text, text) to anon, authenticated;
 
 -- Pickup/drop-off assignment (vehicle no. + driver contact). Upserts an
 -- empty dr_travel_details row first so admin can assign a pickup even
@@ -826,7 +832,9 @@ create or replace function dr_admin_set_travel_note(
   p_stay_coordinator_name text default null,
   p_stay_coordinator_phone text default null,
   p_stay_place_name text default null,
-  p_stay_map_link text default null
+  p_stay_map_link text default null,
+  p_stay_coordinator_name2 text default null,
+  p_stay_coordinator_phone2 text default null
 )
 returns void
 language plpgsql
@@ -838,11 +846,13 @@ begin
   insert into dr_travel_note (
     id, airport_name, road_time, railway_station_name,
     airport_to_venue_link, airport_to_stay_link, railway_to_venue_link, railway_to_stay_link,
-    stay_coordinator_name, stay_coordinator_phone, stay_place_name, stay_map_link
+    stay_coordinator_name, stay_coordinator_phone, stay_place_name, stay_map_link,
+    stay_coordinator_name2, stay_coordinator_phone2
   ) values (
     1, p_airport_name, p_road_time, p_railway_station_name,
     p_airport_to_venue_link, p_airport_to_stay_link, p_railway_to_venue_link, p_railway_to_stay_link,
-    p_stay_coordinator_name, p_stay_coordinator_phone, p_stay_place_name, p_stay_map_link
+    p_stay_coordinator_name, p_stay_coordinator_phone, p_stay_place_name, p_stay_map_link,
+    p_stay_coordinator_name2, p_stay_coordinator_phone2
   )
   on conflict (id) do update set
     airport_name = excluded.airport_name,
@@ -855,11 +865,13 @@ begin
     stay_coordinator_name = excluded.stay_coordinator_name,
     stay_coordinator_phone = excluded.stay_coordinator_phone,
     stay_place_name = excluded.stay_place_name,
-    stay_map_link = excluded.stay_map_link;
+    stay_map_link = excluded.stay_map_link,
+    stay_coordinator_name2 = excluded.stay_coordinator_name2,
+    stay_coordinator_phone2 = excluded.stay_coordinator_phone2;
 end;
 $$;
-revoke all on function dr_admin_set_travel_note(uuid, text, text, text, text, text, text, text, text, text, text, text) from public;
-grant execute on function dr_admin_set_travel_note(uuid, text, text, text, text, text, text, text, text, text, text, text) to anon, authenticated;
+revoke all on function dr_admin_set_travel_note(uuid, text, text, text, text, text, text, text, text, text, text, text, text, text) from public;
+grant execute on function dr_admin_set_travel_note(uuid, text, text, text, text, text, text, text, text, text, text, text, text, text) to anon, authenticated;
 
 create or replace function dr_admin_upsert_meal(
   p_token uuid, p_id uuid, p_meal_name text, p_meal_date date,

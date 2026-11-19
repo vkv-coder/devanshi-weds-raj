@@ -167,6 +167,10 @@ function renderFamiliesList() {
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
           <input type="text" placeholder="Coordinator name" value="${escapeHtml(f.stay_coordinator_name || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-name-${f.code}">
           <input type="tel" placeholder="Coordinator phone" value="${escapeHtml(f.stay_coordinator_phone || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-phone-${f.code}">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+          <input type="text" placeholder="Coordinator 2 name (optional)" value="${escapeHtml(f.stay_coordinator_name2 || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-name2-${f.code}">
+          <input type="tel" placeholder="Coordinator 2 phone" value="${escapeHtml(f.stay_coordinator_phone2 || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-phone2-${f.code}">
           <button class="btn-secondary btn-sm" onclick="saveFamilyStay('${f.code}')">Save Stay</button>
         </div>
       </div>
@@ -245,9 +249,12 @@ async function saveFamilyStay(code) {
   const link = document.getElementById(`stay-link-${code}`).value.trim() || null;
   const coordName = document.getElementById(`stay-coord-name-${code}`).value.trim() || null;
   const coordPhone = document.getElementById(`stay-coord-phone-${code}`).value.trim() || null;
+  const coordName2 = document.getElementById(`stay-coord-name2-${code}`).value.trim() || null;
+  const coordPhone2 = document.getElementById(`stay-coord-phone2-${code}`).value.trim() || null;
   const { error } = await db.rpc('dr_admin_set_family_stay', {
     p_token: adminToken(), p_code: code, p_stay_place_name: name, p_stay_map_link: link,
-    p_stay_coordinator_name: coordName, p_stay_coordinator_phone: coordPhone
+    p_stay_coordinator_name: coordName, p_stay_coordinator_phone: coordPhone,
+    p_stay_coordinator_name2: coordName2, p_stay_coordinator_phone2: coordPhone2
   });
   if (error) { showToast(error.message, 'error'); return; }
   showToast('✅ Stay saved');
@@ -394,6 +401,10 @@ async function renderTravelTab(container) {
         <div class="form-group" style="flex:1;min-width:140px;"><label>Coordinator Name</label><input type="text" id="note-coord-name" placeholder="e.g. Rahul"></div>
         <div class="form-group" style="flex:1;min-width:140px;"><label>Coordinator Phone</label><input type="tel" id="note-coord-phone" placeholder="e.g. 98765xxxxx"></div>
       </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="form-group" style="flex:1;min-width:140px;"><label>Coordinator 2 Name (optional)</label><input type="text" id="note-coord-name2" placeholder="e.g. Priya"></div>
+        <div class="form-group" style="flex:1;min-width:140px;"><label>Coordinator 2 Phone</label><input type="tel" id="note-coord-phone2" placeholder="e.g. 98765xxxxx"></div>
+      </div>
       <button class="btn-primary btn-sm" onclick="saveTravelNote()">Save Note</button>
       <div class="error-msg" id="note-error"></div>
       <div class="section-header" style="margin-top:14px;"><h3>Train Routes</h3><button class="btn-secondary btn-sm" onclick="openTravelRouteModal(null)">+ Add Route</button></div>
@@ -489,6 +500,8 @@ async function loadTravelNote() {
   document.getElementById('note-coord-phone').value = data.stay_coordinator_phone || '';
   document.getElementById('note-stay-name').value = data.stay_place_name || '';
   document.getElementById('note-stay-link').value = data.stay_map_link || '';
+  document.getElementById('note-coord-name2').value = data.stay_coordinator_name2 || '';
+  document.getElementById('note-coord-phone2').value = data.stay_coordinator_phone2 || '';
 }
 
 async function saveTravelNote() {
@@ -506,7 +519,9 @@ async function saveTravelNote() {
     p_stay_coordinator_name: document.getElementById('note-coord-name').value.trim() || null,
     p_stay_coordinator_phone: document.getElementById('note-coord-phone').value.trim() || null,
     p_stay_place_name: document.getElementById('note-stay-name').value.trim() || null,
-    p_stay_map_link: document.getElementById('note-stay-link').value.trim() || null
+    p_stay_map_link: document.getElementById('note-stay-link').value.trim() || null,
+    p_stay_coordinator_name2: document.getElementById('note-coord-name2').value.trim() || null,
+    p_stay_coordinator_phone2: document.getElementById('note-coord-phone2').value.trim() || null
   });
   if (error) { errEl.textContent = error.message; return; }
   showToast('✅ Saved');

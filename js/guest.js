@@ -97,7 +97,9 @@ async function getEffectiveStayInfo() {
     name: currentFamily.stay_place_name || note.stay_place_name || null,
     link: currentFamily.stay_map_link || note.stay_map_link || null,
     coordName: currentFamily.stay_coordinator_name || note.stay_coordinator_name || null,
-    coordPhone: currentFamily.stay_coordinator_phone || note.stay_coordinator_phone || null
+    coordPhone: currentFamily.stay_coordinator_phone || note.stay_coordinator_phone || null,
+    coordName2: currentFamily.stay_coordinator_name2 || note.stay_coordinator_name2 || null,
+    coordPhone2: currentFamily.stay_coordinator_phone2 || note.stay_coordinator_phone2 || null
   };
 }
 
@@ -118,6 +120,7 @@ async function renderDashboardPage(container) {
       <div class="card-title">🏨 Your Stay</div>
       ${stay.name ? `<div class="ev-meta">${escapeHtml(stay.name)}</div>` : ''}
       ${stay.coordPhone ? `<div class="ev-meta">📞 ${escapeHtml(stay.coordName || 'Coordinator')}: <a href="tel:${escapeHtml(stay.coordPhone)}">${escapeHtml(stay.coordPhone)}</a></div>` : ''}
+      ${stay.coordPhone2 ? `<div class="ev-meta">📞 ${escapeHtml(stay.coordName2 || 'Coordinator')}: <a href="tel:${escapeHtml(stay.coordPhone2)}">${escapeHtml(stay.coordPhone2)}</a></div>` : ''}
       ${stay.link ? `
       <div class="form-hint" style="margin-top:8px;">Please reach here</div>
       <div class="ev-links"><a class="ev-link-btn" href="${escapeHtml(stay.link)}" target="_blank" rel="noopener">🗺️ View on Map</a></div>
@@ -206,7 +209,7 @@ async function renderHomePage(container) {
 
 // ---------- My Stay (accommodation: place, map, rooms, coordinator) ----------
 async function renderStayPage(container) {
-  const { name, link, coordName, coordPhone } = await getEffectiveStayInfo();
+  const { name, link, coordName, coordPhone, coordName2, coordPhone2 } = await getEffectiveStayInfo();
   const members = currentFamily.members || [];
 
   container.innerHTML = `
@@ -216,6 +219,7 @@ async function renderStayPage(container) {
       ${name || link ? `
         ${name ? `<div class="ev-meta">${escapeHtml(name)}</div>` : ''}
         ${coordPhone ? `<div class="ev-meta">📞 ${escapeHtml(coordName || 'Coordinator')}: <a href="tel:${escapeHtml(coordPhone)}">${escapeHtml(coordPhone)}</a></div>` : ''}
+        ${coordPhone2 ? `<div class="ev-meta">📞 ${escapeHtml(coordName2 || 'Coordinator')}: <a href="tel:${escapeHtml(coordPhone2)}">${escapeHtml(coordPhone2)}</a></div>` : ''}
         ${link ? `
         <div class="form-hint" style="margin-top:8px;">Please reach here</div>
         <div class="ev-links"><a class="ev-link-btn" href="${escapeHtml(link)}" target="_blank" rel="noopener">🗺️ View on Map</a></div>
