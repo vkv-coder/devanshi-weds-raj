@@ -209,7 +209,7 @@ async function renderHomePage(container) {
 
 // ---------- My Stay (accommodation: place, map, rooms, coordinator) ----------
 async function renderStayPage(container) {
-  const { name, link, coordName, coordPhone, coordName2, coordPhone2 } = await getEffectiveStayInfo();
+  const { name, link, coordName2, coordPhone2 } = await getEffectiveStayInfo();
   const members = currentFamily.members || [];
 
   container.innerHTML = `
@@ -218,7 +218,6 @@ async function renderStayPage(container) {
       <div class="card-title">🏨 Your Stay</div>
       ${name || link ? `
         ${name ? `<div class="ev-meta">${escapeHtml(name)}</div>` : ''}
-        ${coordPhone ? `<div class="ev-meta">📞 ${escapeHtml(coordName || 'Coordinator')}: <a href="tel:${escapeHtml(coordPhone)}">${escapeHtml(coordPhone)}</a></div>` : ''}
         ${coordPhone2 ? `<div class="ev-meta">📞 ${escapeHtml(coordName2 || 'Coordinator')}: <a href="tel:${escapeHtml(coordPhone2)}">${escapeHtml(coordPhone2)}</a></div>` : ''}
         ${link ? `
         <div class="form-hint" style="margin-top:8px;">Please reach here</div>
