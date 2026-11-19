@@ -1,0 +1,24 @@
+-- Devanshi weds Raj - gallery storage bucket.
+-- Open read+insert scoped strictly to this one bucket (dr-gallery) - the
+-- gallery is deliberately "any guest can snap a photo and everyone sees
+-- it instantly", so there's no per-guest write restriction here, same as
+-- the public SELECT already granted on dr_itinerary/dr_announcements.
+-- Policies are scoped to bucket_id = 'dr-gallery' only, never touching any
+-- other app's bucket on this shared project.
+
+insert into storage.buckets (id, name, public)
+values ('dr-gallery', 'dr-gallery', true)
+on conflict (id) do nothing;
+
+drop policy if exists dr_gallery_public_read on storage.objects;
+create policy dr_gallery_public_read on storage.objects
+  for select using (bucket_id = 'dr-gallery');
+
+drop policy if exists dr_gallery_public_upload on storage.objects;
+create policy dr_gallery_public_upload on storage.objects
+  for insert with check (bucket_id = 'dr-gallery');
+
+-- Deliberately NO delete policy for anon/authenticated here - photo
+-- deletion is admin-only and goes through the dr-admin-delete-photo Edge
+-- Function (service role), not the client-side storage API. Granting an
+-- open delete policy would let any guest delete anyone's photo directly.

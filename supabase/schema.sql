@@ -1,0 +1,937 @@
+-- ==========================================
+-- Devanshi weds Raj - wedding guest PWA
+-- All tables prefixed dr_ (shared "rotry_event" Supabase project).
+-- Guests authenticate with a family code only (no Supabase Auth, no
+-- approval). Admin authenticates with a PIN -> short-lived session token.
+-- Every table has RLS enabled with ZERO anon/authenticated grants on the
+-- base tables except dr_itinerary/dr_announcements (public read, nothing
+-- sensitive) - all other access goes through SECURITY DEFINER RPCs that
+-- re-validate the family code / admin token on every call.
+-- ==========================================
+
+create table if not exists dr_families (
+  code text primary key,
+  family_name text not null,
+  created_at timestamptz not null default now(),
+  stay_place_name text,
+  stay_map_link text,
+  stay_coordinator_name text,
+  stay_coordinator_phone text
+);
+
+create table if not exists dr_members (
+  id uuid primary key default gen_random_uuid(),
+  family_code text not null references dr_families(code) on delete cascade,
+  name text not null,
+  room_no text,
+  sort_order int not null default 0,
+  member_no int,
+  created_at timestamptz not null default now()
+);
+create index if not exists dr_members_family_idx on dr_members(family_code);
+
+-- Guest-editable special-requirement note (wheelchair, creche, etc.) -
+-- deliberately a separate concept from dr_travel_details.notes, which is
+-- about the journey itself, not accessibility/venue needs.
+alter table dr_members add column if not exists remarks text;
+
+-- member_no: a permanent per-family sequence number (v001/1, v001/2, ...)
+-- assigned once at creation and never recalculated, so it stays a stable
+-- reference for a specific person even if someone else is later removed.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'dr_members' and column_name = 'member_no'
+  ) then
+    alter table dr_members add column member_no int;
+  end if;
+end $$;
+
+update dr_members m set member_no = sub.rn
+from (
+  select id, row_number() over (partition by family_code order by sort_order, created_at) as rn
+  from dr_members where member_no is null
+) sub
+where m.id = sub.id and m.member_no is null;
+
+alter table dr_members alter column member_no set not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'dr_members_family_member_no_key'
+  ) then
+    alter table dr_members add constraint dr_members_family_member_no_key unique (family_code, member_no);
+  end if;
+end $$;
+
+create table if not exists dr_travel_details (
+  member_id uuid primary key references dr_members(id) on delete cascade,
+  arrival_date date,
+  arrival_time time,
+  arrival_mode text,
+  arrival_number text,
+  departure_date date,
+  departure_time time,
+  departure_mode text,
+  departure_number text,
+  notes text,
+  updated_at timestamptz not null default now()
+);
+
+-- Pickup/drop-off assignment: admin-only fields (never written by the
+-- guest-facing dr_save_travel_details RPC), shown read-only to the guest
+-- so they know who's collecting them.
+alter table dr_travel_details add column if not exists arrival_vehicle_no text;
+alter table dr_travel_details add column if not exists arrival_driver_contact text;
+alter table dr_travel_details add column if not exists departure_vehicle_no text;
+alter table dr_travel_details add column if not exists departure_driver_contact text;
+
+create table if not exists dr_itinerary (
+  id uuid primary key default gen_random_uuid(),
+  event_name text not null,
+  event_date date,
+  start_time time,
+  end_time time,
+  venue text,
+  menu text,
+  dress_code text,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  map_link text,
+  coordinator_name text,
+  coordinator_phone text
+);
+
+create table if not exists dr_travel_routes (
+  id uuid primary key default gen_random_uuid(),
+  from_place text not null,
+  train_no text,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists dr_travel_note (
+  id int primary key default 1,
+  airport_name text,
+  road_time text,
+  railway_station_name text,
+  airport_to_venue_link text,
+  airport_to_stay_link text,
+  railway_to_venue_link text,
+  railway_to_stay_link text,
+  constraint dr_travel_note_single_row check (id = 1)
+);
+
+create table if not exists dr_meals (
+  id uuid primary key default gen_random_uuid(),
+  meal_name text not null,
+  meal_date date,
+  meal_time time,
+  venue text,
+  details text,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists dr_announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  message text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Two general help-contact numbers shown to every guest. Public read
+-- (phone numbers meant to be shared, same reasoning as itinerary/
+-- announcements), admin-write only.
+create table if not exists dr_contact_info (
+  id int primary key default 1,
+  contact1_label text,
+  contact1_phone text,
+  contact2_label text,
+  contact2_phone text,
+  constraint dr_contact_info_single_row check (id = 1)
+);
+
+create table if not exists dr_gallery_photos (
+  id uuid primary key default gen_random_uuid(),
+  family_code text references dr_families(code) on delete set null,
+  uploader_name text,
+  storage_path text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists dr_push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  family_code text not null references dr_families(code) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists dr_admin_secret (
+  id int primary key default 1,
+  pin_hash text not null,
+  constraint dr_admin_secret_single_row check (id = 1)
+);
+
+create table if not exists dr_admin_sessions (
+  token uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '12 hours')
+);
+
+alter table dr_families enable row level security;
+alter table dr_members enable row level security;
+alter table dr_travel_details enable row level security;
+alter table dr_itinerary enable row level security;
+alter table dr_travel_routes enable row level security;
+alter table dr_travel_note enable row level security;
+alter table dr_meals enable row level security;
+alter table dr_announcements enable row level security;
+alter table dr_gallery_photos enable row level security;
+alter table dr_push_subscriptions enable row level security;
+alter table dr_admin_secret enable row level security;
+alter table dr_admin_sessions enable row level security;
+alter table dr_contact_info enable row level security;
+
+revoke all on dr_families, dr_members, dr_travel_details, dr_gallery_photos,
+  dr_push_subscriptions, dr_admin_secret, dr_admin_sessions
+  from anon, authenticated;
+
+-- Itinerary, announcements & contact info: nothing sensitive, readable
+-- without a code so the admin panel preview and any future "public
+-- teaser" page both work.
+drop policy if exists dr_itinerary_read on dr_itinerary;
+create policy dr_itinerary_read on dr_itinerary for select using (true);
+revoke insert, update, delete on dr_itinerary from anon, authenticated;
+
+drop policy if exists dr_travel_routes_read on dr_travel_routes;
+create policy dr_travel_routes_read on dr_travel_routes for select using (true);
+revoke insert, update, delete on dr_travel_routes from anon, authenticated;
+
+drop policy if exists dr_travel_note_read on dr_travel_note;
+create policy dr_travel_note_read on dr_travel_note for select using (true);
+revoke insert, update, delete on dr_travel_note from anon, authenticated;
+
+drop policy if exists dr_meals_read on dr_meals;
+create policy dr_meals_read on dr_meals for select using (true);
+revoke insert, update, delete on dr_meals from anon, authenticated;
+
+drop policy if exists dr_announcements_read on dr_announcements;
+create policy dr_announcements_read on dr_announcements for select using (true);
+revoke insert, update, delete on dr_announcements from anon, authenticated;
+
+drop policy if exists dr_contact_info_read on dr_contact_info;
+create policy dr_contact_info_read on dr_contact_info for select using (true);
+revoke insert, update, delete on dr_contact_info from anon, authenticated;
+
+grant select on dr_itinerary, dr_announcements, dr_contact_info, dr_travel_routes, dr_travel_note, dr_meals to anon, authenticated;
+
+-- ==========================================
+-- Internal helpers (not granted to anon/authenticated directly)
+-- ==========================================
+
+create or replace function dr_assert_admin(p_token uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_token is null or not exists (
+    select 1 from dr_admin_sessions where token = p_token and expires_at > now()
+  ) then
+    raise exception 'Not authorised.';
+  end if;
+end;
+$$;
+revoke all on function dr_assert_admin(uuid) from public;
+
+create or replace function dr_assert_family(p_code text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_code is null or not exists (select 1 from dr_families where code = lower(p_code)) then
+    raise exception 'Invalid code.';
+  end if;
+end;
+$$;
+revoke all on function dr_assert_family(text) from public;
+
+-- ==========================================
+-- Guest-facing RPCs
+-- ==========================================
+
+create or replace function dr_guest_login(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+  v_family dr_families;
+  v_result jsonb;
+begin
+  select * into v_family from dr_families where code = v_code;
+  if v_family is null then
+    raise exception 'Family code not found.';
+  end if;
+
+  select jsonb_build_object(
+    'code', v_family.code,
+    'family_name', v_family.family_name,
+    'stay_place_name', v_family.stay_place_name,
+    'stay_map_link', v_family.stay_map_link,
+    'stay_coordinator_name', v_family.stay_coordinator_name,
+    'stay_coordinator_phone', v_family.stay_coordinator_phone,
+    'members', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', m.id,
+        'name', m.name,
+        'room_no', m.room_no,
+        'member_code', v_family.code || '/' || m.member_no,
+        'remarks', m.remarks,
+        'travel', (
+          select jsonb_build_object(
+            'arrival_date', t.arrival_date, 'arrival_time', t.arrival_time,
+            'arrival_mode', t.arrival_mode, 'arrival_number', t.arrival_number,
+            'arrival_vehicle_no', t.arrival_vehicle_no, 'arrival_driver_contact', t.arrival_driver_contact,
+            'departure_date', t.departure_date, 'departure_time', t.departure_time,
+            'departure_mode', t.departure_mode, 'departure_number', t.departure_number,
+            'departure_vehicle_no', t.departure_vehicle_no, 'departure_driver_contact', t.departure_driver_contact,
+            'notes', t.notes
+          ) from dr_travel_details t where t.member_id = m.id
+        )
+      ) order by m.sort_order, m.name)
+      from dr_members m where m.family_code = v_family.code
+    ), '[]'::jsonb)
+  ) into v_result;
+
+  return v_result;
+end;
+$$;
+revoke all on function dr_guest_login(text) from public;
+grant execute on function dr_guest_login(text) to anon, authenticated;
+
+create or replace function dr_save_travel_details(
+  p_code text, p_member_id uuid,
+  p_arrival_date date, p_arrival_time time, p_arrival_mode text, p_arrival_number text,
+  p_departure_date date, p_departure_time time, p_departure_mode text, p_departure_number text,
+  p_notes text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+begin
+  if not exists (select 1 from dr_members where id = p_member_id and family_code = v_code) then
+    raise exception 'Member does not belong to this family code.';
+  end if;
+
+  insert into dr_travel_details (
+    member_id, arrival_date, arrival_time, arrival_mode, arrival_number,
+    departure_date, departure_time, departure_mode, departure_number, notes, updated_at
+  ) values (
+    p_member_id, p_arrival_date, p_arrival_time, p_arrival_mode, p_arrival_number,
+    p_departure_date, p_departure_time, p_departure_mode, p_departure_number, p_notes, now()
+  )
+  on conflict (member_id) do update set
+    arrival_date = excluded.arrival_date, arrival_time = excluded.arrival_time,
+    arrival_mode = excluded.arrival_mode, arrival_number = excluded.arrival_number,
+    departure_date = excluded.departure_date, departure_time = excluded.departure_time,
+    departure_mode = excluded.departure_mode, departure_number = excluded.departure_number,
+    notes = excluded.notes, updated_at = now();
+end;
+$$;
+revoke all on function dr_save_travel_details(text, uuid, date, time, text, text, date, time, text, text, text) from public;
+grant execute on function dr_save_travel_details(text, uuid, date, time, text, text, date, time, text, text, text) to anon, authenticated;
+
+create or replace function dr_save_remarks(p_code text, p_member_id uuid, p_remarks text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+begin
+  if not exists (select 1 from dr_members where id = p_member_id and family_code = v_code) then
+    raise exception 'Member does not belong to this family code.';
+  end if;
+  update dr_members set remarks = nullif(trim(p_remarks), '') where id = p_member_id;
+end;
+$$;
+revoke all on function dr_save_remarks(text, uuid, text) from public;
+grant execute on function dr_save_remarks(text, uuid, text) to anon, authenticated;
+
+create or replace function dr_subscribe_push(p_code text, p_endpoint text, p_p256dh text, p_auth text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+begin
+  perform dr_assert_family(v_code);
+  insert into dr_push_subscriptions (family_code, endpoint, p256dh, auth)
+  values (v_code, p_endpoint, p_p256dh, p_auth)
+  on conflict (endpoint) do update set family_code = excluded.family_code, p256dh = excluded.p256dh, auth = excluded.auth;
+end;
+$$;
+revoke all on function dr_subscribe_push(text, text, text, text) from public;
+grant execute on function dr_subscribe_push(text, text, text, text) to anon, authenticated;
+
+create or replace function dr_get_gallery(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+begin
+  perform dr_assert_family(v_code);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', id, 'uploader_name', uploader_name, 'storage_path', storage_path, 'created_at', created_at
+    ) order by created_at desc)
+    from dr_gallery_photos
+  ), '[]'::jsonb);
+end;
+$$;
+revoke all on function dr_get_gallery(text) from public;
+grant execute on function dr_get_gallery(text) to anon, authenticated;
+
+create or replace function dr_add_gallery_photo(p_code text, p_uploader_name text, p_storage_path text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+  v_id uuid;
+begin
+  perform dr_assert_family(v_code);
+  insert into dr_gallery_photos (family_code, uploader_name, storage_path)
+  values (v_code, p_uploader_name, p_storage_path)
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+revoke all on function dr_add_gallery_photo(text, text, text) from public;
+grant execute on function dr_add_gallery_photo(text, text, text) to anon, authenticated;
+
+-- ==========================================
+-- Admin RPCs
+-- ==========================================
+
+create or replace function dr_admin_login(p_pin text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hash text;
+  v_token uuid;
+begin
+  select pin_hash into v_hash from dr_admin_secret where id = 1;
+  if v_hash is null or v_hash <> extensions.crypt(p_pin, v_hash) then
+    raise exception 'Incorrect PIN.';
+  end if;
+  delete from dr_admin_sessions where expires_at < now();
+  insert into dr_admin_sessions default values returning token into v_token;
+  return v_token;
+end;
+$$;
+revoke all on function dr_admin_login(text) from public;
+grant execute on function dr_admin_login(text) to anon, authenticated;
+
+create or replace function dr_admin_list_families(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'code', f.code, 'family_name', f.family_name,
+      'stay_place_name', f.stay_place_name, 'stay_map_link', f.stay_map_link,
+      'stay_coordinator_name', f.stay_coordinator_name, 'stay_coordinator_phone', f.stay_coordinator_phone,
+      'members', coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', m.id, 'name', m.name, 'room_no', m.room_no, 'sort_order', m.sort_order,
+          'member_code', f.code || '/' || m.member_no, 'remarks', m.remarks
+        ) order by m.sort_order, m.name)
+        from dr_members m where m.family_code = f.code
+      ), '[]'::jsonb)
+    ) order by f.created_at desc)
+    from dr_families f
+  ), '[]'::jsonb);
+end;
+$$;
+revoke all on function dr_admin_list_families(uuid) from public;
+grant execute on function dr_admin_list_families(uuid) to anon, authenticated;
+
+-- Flat member list across ALL families, with room + travel details, for the
+-- admin Rooms and Travel views (room-wise/guest-wise lookup, arrival-
+-- /departure-sorted manifest). dr_admin_list_families stays family-grouped
+-- for the Families tab; this is the cross-family flat shape those two
+-- reports actually need.
+create or replace function dr_admin_list_members(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', m.id,
+      'name', m.name,
+      'room_no', m.room_no,
+      'member_code', m.family_code || '/' || m.member_no,
+      'family_code', m.family_code,
+      'family_name', f.family_name,
+      'remarks', m.remarks,
+      'travel', (
+        select jsonb_build_object(
+          'arrival_date', t.arrival_date, 'arrival_time', t.arrival_time,
+          'arrival_mode', t.arrival_mode, 'arrival_number', t.arrival_number,
+          'arrival_vehicle_no', t.arrival_vehicle_no, 'arrival_driver_contact', t.arrival_driver_contact,
+          'departure_date', t.departure_date, 'departure_time', t.departure_time,
+          'departure_mode', t.departure_mode, 'departure_number', t.departure_number,
+          'departure_vehicle_no', t.departure_vehicle_no, 'departure_driver_contact', t.departure_driver_contact,
+          'notes', t.notes
+        ) from dr_travel_details t where t.member_id = m.id
+      )
+    ) order by f.family_name, m.sort_order, m.name)
+    from dr_members m
+    join dr_families f on f.code = m.family_code
+  ), '[]'::jsonb);
+end;
+$$;
+revoke all on function dr_admin_list_members(uuid) from public;
+grant execute on function dr_admin_list_members(uuid) to anon, authenticated;
+
+create or replace function dr_admin_create_family(p_token uuid, p_code text, p_family_name text, p_member_names text[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+  v_name text;
+  v_i int := 0;
+begin
+  perform dr_assert_admin(p_token);
+  insert into dr_families (code, family_name) values (v_code, p_family_name);
+  foreach v_name in array p_member_names loop
+    if trim(v_name) <> '' then
+      v_i := v_i + 1;
+      insert into dr_members (family_code, name, sort_order, member_no) values (v_code, trim(v_name), v_i - 1, v_i);
+    end if;
+  end loop;
+end;
+$$;
+revoke all on function dr_admin_create_family(uuid, text, text, text[]) from public;
+grant execute on function dr_admin_create_family(uuid, text, text, text[]) to anon, authenticated;
+
+create or replace function dr_admin_delete_family(p_token uuid, p_code text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  delete from dr_families where code = lower(trim(p_code));
+end;
+$$;
+revoke all on function dr_admin_delete_family(uuid, text) from public;
+grant execute on function dr_admin_delete_family(uuid, text) to anon, authenticated;
+
+create or replace function dr_admin_add_member(p_token uuid, p_code text, p_name text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+  v_code text := lower(trim(p_code));
+  v_next_sort int;
+  v_next_member_no int;
+begin
+  perform dr_assert_admin(p_token);
+  select coalesce(max(sort_order) + 1, 0), coalesce(max(member_no) + 1, 1)
+    into v_next_sort, v_next_member_no
+    from dr_members where family_code = v_code;
+  insert into dr_members (family_code, name, sort_order, member_no) values (v_code, trim(p_name), v_next_sort, v_next_member_no)
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+revoke all on function dr_admin_add_member(uuid, text, text) from public;
+grant execute on function dr_admin_add_member(uuid, text, text) to anon, authenticated;
+
+-- Guest self-service version of dr_admin_add_member: no admin token, since
+-- the family code itself is the guest's credential (same trust model as
+-- dr_guest_login) - a guest can only add under the code they logged in
+-- with. member_no auto-increments under that family, same as admin's path.
+create or replace function dr_guest_add_member(p_code text, p_name text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := lower(trim(p_code));
+  v_id uuid;
+  v_next_sort int;
+  v_next_member_no int;
+  v_name text := trim(p_name);
+begin
+  if not exists (select 1 from dr_families where code = v_code) then
+    raise exception 'Family code not found.';
+  end if;
+  if v_name = '' then
+    raise exception 'Name is required.';
+  end if;
+  select coalesce(max(sort_order) + 1, 0), coalesce(max(member_no) + 1, 1)
+    into v_next_sort, v_next_member_no
+    from dr_members where family_code = v_code;
+  insert into dr_members (family_code, name, sort_order, member_no)
+    values (v_code, v_name, v_next_sort, v_next_member_no)
+    returning id into v_id;
+  return jsonb_build_object(
+    'id', v_id, 'name', v_name, 'room_no', null, 'remarks', null,
+    'member_code', v_code || '/' || v_next_member_no, 'travel', null
+  );
+end;
+$$;
+revoke all on function dr_guest_add_member(text, text) from public;
+grant execute on function dr_guest_add_member(text, text) to anon, authenticated;
+grant execute on function dr_admin_add_member(uuid, text, text) to anon, authenticated;
+
+create or replace function dr_admin_delete_member(p_token uuid, p_member_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  delete from dr_members where id = p_member_id;
+end;
+$$;
+revoke all on function dr_admin_delete_member(uuid, uuid) from public;
+grant execute on function dr_admin_delete_member(uuid, uuid) to anon, authenticated;
+
+create or replace function dr_admin_set_room(p_token uuid, p_member_id uuid, p_room_no text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  update dr_members set room_no = p_room_no where id = p_member_id;
+end;
+$$;
+revoke all on function dr_admin_set_room(uuid, uuid, text) from public;
+grant execute on function dr_admin_set_room(uuid, uuid, text) to anon, authenticated;
+
+create or replace function dr_admin_set_family_stay(
+  p_token uuid, p_code text, p_stay_place_name text, p_stay_map_link text,
+  p_stay_coordinator_name text default null, p_stay_coordinator_phone text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  update dr_families set
+    stay_place_name = p_stay_place_name, stay_map_link = p_stay_map_link,
+    stay_coordinator_name = p_stay_coordinator_name, stay_coordinator_phone = p_stay_coordinator_phone
+  where code = lower(trim(p_code));
+end;
+$$;
+revoke all on function dr_admin_set_family_stay(uuid, text, text, text, text, text) from public;
+grant execute on function dr_admin_set_family_stay(uuid, text, text, text, text, text) to anon, authenticated;
+
+-- Pickup/drop-off assignment (vehicle no. + driver contact). Upserts an
+-- empty dr_travel_details row first so admin can assign a pickup even
+-- before the guest has submitted their own arrival/departure details.
+create or replace function dr_admin_set_pickup(p_token uuid, p_member_id uuid, p_leg text, p_vehicle_no text, p_driver_contact text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  if p_leg not in ('arrival', 'departure') then
+    raise exception 'Invalid leg - must be arrival or departure.';
+  end if;
+
+  insert into dr_travel_details (member_id) values (p_member_id)
+  on conflict (member_id) do nothing;
+
+  if p_leg = 'arrival' then
+    update dr_travel_details set arrival_vehicle_no = p_vehicle_no, arrival_driver_contact = p_driver_contact, updated_at = now()
+    where member_id = p_member_id;
+  else
+    update dr_travel_details set departure_vehicle_no = p_vehicle_no, departure_driver_contact = p_driver_contact, updated_at = now()
+    where member_id = p_member_id;
+  end if;
+end;
+$$;
+revoke all on function dr_admin_set_pickup(uuid, uuid, text, text, text) from public;
+grant execute on function dr_admin_set_pickup(uuid, uuid, text, text, text) to anon, authenticated;
+
+create or replace function dr_admin_set_contacts(p_token uuid, p_c1_label text, p_c1_phone text, p_c2_label text, p_c2_phone text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  insert into dr_contact_info (id, contact1_label, contact1_phone, contact2_label, contact2_phone)
+  values (1, p_c1_label, p_c1_phone, p_c2_label, p_c2_phone)
+  on conflict (id) do update set
+    contact1_label = excluded.contact1_label, contact1_phone = excluded.contact1_phone,
+    contact2_label = excluded.contact2_label, contact2_phone = excluded.contact2_phone;
+end;
+$$;
+revoke all on function dr_admin_set_contacts(uuid, text, text, text, text) from public;
+grant execute on function dr_admin_set_contacts(uuid, text, text, text, text) to anon, authenticated;
+
+create or replace function dr_admin_upsert_itinerary(
+  p_token uuid, p_id uuid, p_event_name text, p_event_date date,
+  p_start_time time, p_end_time time, p_venue text, p_menu text, p_dress_code text, p_sort_order int,
+  p_map_link text default null, p_coordinator_name text default null, p_coordinator_phone text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  perform dr_assert_admin(p_token);
+  if p_id is null then
+    insert into dr_itinerary (event_name, event_date, start_time, end_time, venue, menu, dress_code, sort_order, map_link, coordinator_name, coordinator_phone)
+    values (p_event_name, p_event_date, p_start_time, p_end_time, p_venue, p_menu, p_dress_code, coalesce(p_sort_order, 0), p_map_link, p_coordinator_name, p_coordinator_phone)
+    returning id into v_id;
+  else
+    update dr_itinerary set
+      event_name = p_event_name, event_date = p_event_date, start_time = p_start_time, end_time = p_end_time,
+      venue = p_venue, menu = p_menu, dress_code = p_dress_code, sort_order = coalesce(p_sort_order, sort_order),
+      map_link = p_map_link, coordinator_name = p_coordinator_name, coordinator_phone = p_coordinator_phone
+    where id = p_id
+    returning id into v_id;
+  end if;
+  return v_id;
+end;
+$$;
+revoke all on function dr_admin_upsert_itinerary(uuid, uuid, text, date, time, time, text, text, text, int, text, text, text) from public;
+grant execute on function dr_admin_upsert_itinerary(uuid, uuid, text, date, time, time, text, text, text, int, text, text, text) to anon, authenticated;
+
+create or replace function dr_admin_delete_itinerary(p_token uuid, p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  delete from dr_itinerary where id = p_id;
+end;
+$$;
+revoke all on function dr_admin_delete_itinerary(uuid, uuid) from public;
+grant execute on function dr_admin_delete_itinerary(uuid, uuid) to anon, authenticated;
+
+create or replace function dr_admin_upsert_travel_route(p_token uuid, p_id uuid, p_from_place text, p_train_no text, p_sort_order int)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  perform dr_assert_admin(p_token);
+  if p_id is null then
+    insert into dr_travel_routes (from_place, train_no, sort_order)
+    values (p_from_place, p_train_no, coalesce(p_sort_order, 0))
+    returning id into v_id;
+  else
+    update dr_travel_routes set
+      from_place = p_from_place, train_no = p_train_no, sort_order = coalesce(p_sort_order, sort_order)
+    where id = p_id
+    returning id into v_id;
+  end if;
+  return v_id;
+end;
+$$;
+revoke all on function dr_admin_upsert_travel_route(uuid, uuid, text, text, int) from public;
+grant execute on function dr_admin_upsert_travel_route(uuid, uuid, text, text, int) to anon, authenticated;
+
+create or replace function dr_admin_delete_travel_route(p_token uuid, p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  delete from dr_travel_routes where id = p_id;
+end;
+$$;
+revoke all on function dr_admin_delete_travel_route(uuid, uuid) from public;
+grant execute on function dr_admin_delete_travel_route(uuid, uuid) to anon, authenticated;
+
+create or replace function dr_admin_set_travel_note(
+  p_token uuid, p_airport_name text, p_road_time text,
+  p_railway_station_name text default null,
+  p_airport_to_venue_link text default null,
+  p_airport_to_stay_link text default null,
+  p_railway_to_venue_link text default null,
+  p_railway_to_stay_link text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  insert into dr_travel_note (
+    id, airport_name, road_time, railway_station_name,
+    airport_to_venue_link, airport_to_stay_link, railway_to_venue_link, railway_to_stay_link
+  ) values (
+    1, p_airport_name, p_road_time, p_railway_station_name,
+    p_airport_to_venue_link, p_airport_to_stay_link, p_railway_to_venue_link, p_railway_to_stay_link
+  )
+  on conflict (id) do update set
+    airport_name = excluded.airport_name,
+    road_time = excluded.road_time,
+    railway_station_name = excluded.railway_station_name,
+    airport_to_venue_link = excluded.airport_to_venue_link,
+    airport_to_stay_link = excluded.airport_to_stay_link,
+    railway_to_venue_link = excluded.railway_to_venue_link,
+    railway_to_stay_link = excluded.railway_to_stay_link;
+end;
+$$;
+revoke all on function dr_admin_set_travel_note(uuid, text, text, text, text, text, text, text) from public;
+grant execute on function dr_admin_set_travel_note(uuid, text, text, text, text, text, text, text) to anon, authenticated;
+
+create or replace function dr_admin_upsert_meal(
+  p_token uuid, p_id uuid, p_meal_name text, p_meal_date date,
+  p_meal_time time, p_venue text, p_details text, p_sort_order int
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  perform dr_assert_admin(p_token);
+  if p_id is null then
+    insert into dr_meals (meal_name, meal_date, meal_time, venue, details, sort_order)
+    values (p_meal_name, p_meal_date, p_meal_time, p_venue, p_details, coalesce(p_sort_order, 0))
+    returning id into v_id;
+  else
+    update dr_meals set
+      meal_name = p_meal_name, meal_date = p_meal_date, meal_time = p_meal_time,
+      venue = p_venue, details = p_details, sort_order = coalesce(p_sort_order, sort_order)
+    where id = p_id
+    returning id into v_id;
+  end if;
+  return v_id;
+end;
+$$;
+revoke all on function dr_admin_upsert_meal(uuid, uuid, text, date, time, text, text, int) from public;
+grant execute on function dr_admin_upsert_meal(uuid, uuid, text, date, time, text, text, int) to anon, authenticated;
+
+create or replace function dr_admin_delete_meal(p_token uuid, p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  delete from dr_meals where id = p_id;
+end;
+$$;
+revoke all on function dr_admin_delete_meal(uuid, uuid) from public;
+grant execute on function dr_admin_delete_meal(uuid, uuid) to anon, authenticated;
+
+create or replace function dr_admin_post_announcement(p_token uuid, p_title text, p_message text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  perform dr_assert_admin(p_token);
+  insert into dr_announcements (title, message) values (p_title, p_message) returning id into v_id;
+  return v_id;
+end;
+$$;
+revoke all on function dr_admin_post_announcement(uuid, text, text) from public;
+grant execute on function dr_admin_post_announcement(uuid, text, text) to anon, authenticated;
+
+create or replace function dr_admin_list_gallery(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', id, 'family_code', family_code, 'uploader_name', uploader_name, 'storage_path', storage_path, 'created_at', created_at
+    ) order by created_at desc)
+    from dr_gallery_photos
+  ), '[]'::jsonb);
+end;
+$$;
+revoke all on function dr_admin_list_gallery(uuid) from public;
+grant execute on function dr_admin_list_gallery(uuid) to anon, authenticated;
+
+-- Photo deletion (DB row + storage object) is handled entirely by the
+-- dr-admin-delete-photo Edge Function (service role), not a Postgres RPC -
+-- an RPC here could only ever delete the metadata row, not the storage
+-- object itself, leaving orphaned files.
+
+-- One-time: set the admin PIN (bcrypt via pgcrypto, lives in `extensions` schema on this project).
+insert into dr_admin_secret (id, pin_hash) values (1, extensions.crypt('4444', extensions.gen_salt('bf')))
+on conflict (id) do update set pin_hash = excluded.pin_hash;

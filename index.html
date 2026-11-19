@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' data: https:; connect-src 'self' https: wss:; base-uri 'self'; object-src 'none';">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Devanshi weds Raj</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#7A1230">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+
+<!-- ========== ENTRY SCREEN (guest or host, one URL) ========== -->
+<div id="entry-screen">
+  <div class="login-box">
+    <div class="entry-toggle-bar">
+      <button type="button" id="toggle-guest-btn" class="entry-toggle-btn active" onclick="showEntryMode('guest')">👪 I'm a Guest</button>
+      <button type="button" id="toggle-admin-btn" class="entry-toggle-btn" onclick="showEntryMode('admin')">🔐 I'm the Host</button>
+    </div>
+
+    <div id="guest-entry-form">
+      <div class="logo-area">
+        <div class="logo-icon">💐</div>
+        <h1>Devanshi weds Raj</h1>
+        <div class="subtitle">Enter your family code to continue</div>
+      </div>
+      <div class="form-group">
+        <label>Family Code</label>
+        <input type="text" id="login-code" placeholder="e.g. d001" autocapitalize="none" autocomplete="off" />
+      </div>
+      <button class="btn-primary" onclick="guestLogin()">Enter</button>
+      <div class="error-msg" id="login-error"></div>
+      <p style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-muted);">
+        Don't have your family code? Please contact the host.
+      </p>
+    </div>
+
+    <div id="admin-entry-form" style="display:none;">
+      <div class="logo-area">
+        <div class="logo-icon">🔐</div>
+        <h1>Host Admin</h1>
+        <div class="subtitle">Devanshi weds Raj</div>
+      </div>
+      <div class="form-group">
+        <label>Admin PIN</label>
+        <input type="password" id="admin-pin" />
+      </div>
+      <button class="btn-primary" onclick="adminLogin()">Log In</button>
+      <div class="error-msg" id="admin-login-error"></div>
+    </div>
+  </div>
+  <div class="app-footer">
+    <p class="support-line">Questions? <a href="mailto:info.anyapps@gmail.com">info.anyapps@gmail.com</a></p>
+    <p class="powered-by">Powered by <a href="https://anyapps.in" target="_blank" rel="noopener" class="anyapps-badge">Any<span class="accent">Apps</span>.in</a></p>
+  </div>
+</div>
+
+<!-- ========== GUEST APP ========== -->
+<div id="main-screen" style="display:none;">
+  <div class="app-header-sticky">
+    <div class="topbar">
+      <span class="app-title">💐 <span id="family-name-badge"></span></span>
+      <div class="topbar-right">
+        <button class="btn-logout" onclick="guestLogout()">Switch Code</button>
+      </div>
+    </div>
+    <div class="nav-tabs" id="nav-tabs"></div>
+  </div>
+  <div class="page-content" id="page-content"></div>
+  <div class="app-footer">
+    <p class="support-line">Questions? <a href="mailto:info.anyapps@gmail.com">info.anyapps@gmail.com</a></p>
+    <p class="powered-by">Powered by <a href="https://anyapps.in" target="_blank" rel="noopener" class="anyapps-badge">Any<span class="accent">Apps</span>.in</a></p>
+  </div>
+</div>
+
+<!-- ========== ADMIN APP ========== -->
+<div id="admin-main-screen" style="display:none;">
+  <div class="app-header-sticky">
+    <div class="topbar">
+      <span class="app-title">🔐 Host Admin</span>
+      <div class="topbar-right">
+        <button class="home-btn" onclick="goToGuestEntry()">Guest App</button>
+        <button class="btn-logout" onclick="adminLogout()">Log Out</button>
+      </div>
+    </div>
+    <div class="nav-tabs" id="admin-nav-tabs"></div>
+  </div>
+  <div class="page-content" id="admin-page-content"></div>
+  <div class="app-footer">
+    <p class="support-line">Questions? <a href="mailto:info.anyapps@gmail.com">info.anyapps@gmail.com</a></p>
+    <p class="powered-by">Powered by <a href="https://anyapps.in" target="_blank" rel="noopener" class="anyapps-badge">Any<span class="accent">Apps</span>.in</a></p>
+  </div>
+</div>
+
+<div id="modal-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box" id="modal-box"></div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script src="js/config.js"></script>
+<script src="js/guest.js"></script>
+<script src="js/admin.js"></script>
+<script>
+function showEntryMode(mode) {
+  if (mode === 'admin' && typeof adminToken === 'function' && adminToken()) {
+    enterAdminApp();
+    return;
+  }
+  const isGuest = mode === 'guest';
+  document.getElementById('guest-entry-form').style.display = isGuest ? 'block' : 'none';
+  document.getElementById('admin-entry-form').style.display = isGuest ? 'none' : 'block';
+  document.getElementById('toggle-guest-btn').classList.toggle('active', isGuest);
+  document.getElementById('toggle-admin-btn').classList.toggle('active', !isGuest);
+}
+
+document.getElementById('login-code').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') guestLogin();
+});
+document.getElementById('admin-pin').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') adminLogin();
+});
+
+if (new URLSearchParams(location.search).get('mode') === 'admin') {
+  showEntryMode('admin');
+}
+</script>
+</body>
+</html>
