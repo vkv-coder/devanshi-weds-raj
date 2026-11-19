@@ -94,7 +94,7 @@ function renderDashboardPage(container) {
     <div class="card">
       <div class="card-title">🏨 Your Stay</div>
       ${currentFamily.stay_place_name ? `<div class="ev-meta">${escapeHtml(currentFamily.stay_place_name)}</div>` : ''}
-      ${currentFamily.stay_coordinator_phone ? `<div class="ev-meta">📞 ${escapeHtml(currentFamily.stay_coordinator_name || 'Coordinator')}: <a href="tel:${escapeHtml(currentFamily.stay_coordinator_phone)}">${escapeHtml(currentFamily.stay_coordinator_phone)}</a></div>` : ''}
+      <div id="dashboard-stay-coordinator"></div>
       ${currentFamily.stay_map_link ? `
       <div class="form-hint" style="margin-top:8px;">Please reach here</div>
       <div class="ev-links"><a class="ev-link-btn" href="${escapeHtml(currentFamily.stay_map_link)}" target="_blank" rel="noopener">🗺️ View on Map</a></div>
@@ -114,6 +114,19 @@ function renderDashboardPage(container) {
     </div>
   `;
   renderContactCard();
+  renderDashboardStayCoordinator();
+}
+
+async function renderDashboardStayCoordinator() {
+  const el = document.getElementById('dashboard-stay-coordinator');
+  if (!el) return;
+  let coordName = currentFamily.stay_coordinator_name;
+  let coordPhone = currentFamily.stay_coordinator_phone;
+  if (!coordPhone) {
+    const { data: note } = await db.from('dr_travel_note').select('stay_coordinator_name, stay_coordinator_phone').eq('id', 1).maybeSingle();
+    if (note) { coordName = coordName || note.stay_coordinator_name; coordPhone = coordPhone || note.stay_coordinator_phone; }
+  }
+  el.innerHTML = coordPhone ? `<div class="ev-meta">📞 ${escapeHtml(coordName || 'Coordinator')}: <a href="tel:${escapeHtml(coordPhone)}">${escapeHtml(coordPhone)}</a></div>` : '';
 }
 
 function goTab(tabId) {
@@ -185,8 +198,12 @@ async function renderHomePage(container) {
 async function renderStayPage(container) {
   const name = currentFamily.stay_place_name;
   const link = currentFamily.stay_map_link;
-  const coordName = currentFamily.stay_coordinator_name;
-  const coordPhone = currentFamily.stay_coordinator_phone;
+  let coordName = currentFamily.stay_coordinator_name;
+  let coordPhone = currentFamily.stay_coordinator_phone;
+  if (!coordPhone) {
+    const { data: note } = await db.from('dr_travel_note').select('stay_coordinator_name, stay_coordinator_phone').eq('id', 1).maybeSingle();
+    if (note) { coordName = coordName || note.stay_coordinator_name; coordPhone = coordPhone || note.stay_coordinator_phone; }
+  }
   const members = currentFamily.members || [];
 
   container.innerHTML = `

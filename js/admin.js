@@ -386,6 +386,11 @@ async function renderTravelTab(container) {
       <div class="form-group"><label>Nearest Railway Station</label><input type="text" id="note-railway" placeholder="e.g. Mandsaur Railway Station"></div>
       <div class="form-group"><label>Railway Station → Venue (Google Maps link)</label><input type="url" id="note-railway-venue" placeholder="https://maps.app.goo.gl/..."></div>
       <div class="form-group"><label>Railway Station → Stay (only if different from venue)</label><input type="url" id="note-railway-stay" placeholder="https://maps.app.goo.gl/..."></div>
+      <div class="form-hint" style="margin-top:10px;margin-bottom:4px;">Default Stay Coordinator - shown to every family unless that specific family has its own coordinator set under Families (e.g. for a different pickup/travel arrangement)</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="form-group" style="flex:1;min-width:140px;"><label>Coordinator Name</label><input type="text" id="note-coord-name" placeholder="e.g. Rahul"></div>
+        <div class="form-group" style="flex:1;min-width:140px;"><label>Coordinator Phone</label><input type="tel" id="note-coord-phone" placeholder="e.g. 98765xxxxx"></div>
+      </div>
       <button class="btn-primary btn-sm" onclick="saveTravelNote()">Save Note</button>
       <div class="error-msg" id="note-error"></div>
       <div class="section-header" style="margin-top:14px;"><h3>Train Routes</h3><button class="btn-secondary btn-sm" onclick="openTravelRouteModal(null)">+ Add Route</button></div>
@@ -477,6 +482,8 @@ async function loadTravelNote() {
   document.getElementById('note-railway').value = data.railway_station_name || '';
   document.getElementById('note-railway-venue').value = data.railway_to_venue_link || '';
   document.getElementById('note-railway-stay').value = data.railway_to_stay_link || '';
+  document.getElementById('note-coord-name').value = data.stay_coordinator_name || '';
+  document.getElementById('note-coord-phone').value = data.stay_coordinator_phone || '';
 }
 
 async function saveTravelNote() {
@@ -490,7 +497,9 @@ async function saveTravelNote() {
     p_airport_to_venue_link: document.getElementById('note-airport-venue').value.trim() || null,
     p_airport_to_stay_link: document.getElementById('note-airport-stay').value.trim() || null,
     p_railway_to_venue_link: document.getElementById('note-railway-venue').value.trim() || null,
-    p_railway_to_stay_link: document.getElementById('note-railway-stay').value.trim() || null
+    p_railway_to_stay_link: document.getElementById('note-railway-stay').value.trim() || null,
+    p_stay_coordinator_name: document.getElementById('note-coord-name').value.trim() || null,
+    p_stay_coordinator_phone: document.getElementById('note-coord-phone').value.trim() || null
   });
   if (error) { errEl.textContent = error.message; return; }
   showToast('✅ Saved');
