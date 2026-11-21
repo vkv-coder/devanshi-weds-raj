@@ -112,6 +112,7 @@ async function renderDashboardPage(container) {
         <div class="banner-icons">💐🎉💐</div>
         <div class="banner-title">Devanshi weds Raj</div>
         <div class="banner-subtitle">Wedding Celebration</div>
+        <div class="banner-date">9th &amp; 10th December</div>
       </div>
       <img class="banner-bugle" src="icons/bugle-right.png" alt="">
     </div>
