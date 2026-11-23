@@ -1036,5 +1036,7 @@ grant execute on function dr_admin_list_gallery(uuid) to anon, authenticated;
 -- object itself, leaving orphaned files.
 
 -- One-time: set the admin PIN (bcrypt via pgcrypto, lives in `extensions` schema on this project).
-insert into dr_admin_secret (id, pin_hash) values (1, extensions.crypt('4444', extensions.gen_salt('bf')))
+-- NOTE: this line is idempotently re-run on every full schema.sql reapply - keep it in sync
+-- with whatever the real live admin PIN currently is, or a future reapply will silently reset it.
+insert into dr_admin_secret (id, pin_hash) values (1, extensions.crypt('3333', extensions.gen_salt('bf')))
 on conflict (id) do update set pin_hash = excluded.pin_hash;
