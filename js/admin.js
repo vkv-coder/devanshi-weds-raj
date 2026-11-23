@@ -140,6 +140,17 @@ async function loadFamilies() {
   renderFamiliesList();
 }
 
+let _expandedFamilies = new Set();
+
+function toggleFamilyExpand(code) {
+  if (_expandedFamilies.has(code)) _expandedFamilies.delete(code);
+  else _expandedFamilies.add(code);
+  const body = document.getElementById(`family-body-${code}`);
+  const caret = document.getElementById(`family-caret-${code}`);
+  if (body) body.style.display = _expandedFamilies.has(code) ? 'block' : 'none';
+  if (caret) caret.textContent = _expandedFamilies.has(code) ? '▾' : '▸';
+}
+
 function renderFamiliesList() {
   const listEl = document.getElementById('families-list');
   if (!listEl) return;
@@ -151,52 +162,60 @@ function renderFamiliesList() {
       f.code.toLowerCase().includes(query) ||
       (f.members || []).some(m => m.name.toLowerCase().includes(query) || (m.room_no && m.room_no.toLowerCase().includes(query)))
     );
+    // searching for something inside a family (name/room) should surface it without an extra click
+    families.forEach(f => _expandedFamilies.add(f.code));
   }
   if (families.length === 0) { listEl.innerHTML = `<div class="empty-state"><p>${adminFamilies.length === 0 ? 'No families added yet.' : 'No matching families.'}</p></div>`; return; }
-  listEl.innerHTML = families.map(f => `
+  listEl.innerHTML = families.map(f => {
+    const expanded = _expandedFamilies.has(f.code);
+    const memberCount = (f.members || []).length;
+    return `
     <div class="member-row">
-      <div class="section-header">
-        <div class="member-name">${escapeHtml(f.family_name)} <span class="form-hint">(code: ${escapeHtml(f.code)})</span></div>
-        <button class="btn-danger btn-sm" onclick="deleteFamily('${f.code}')">Delete</button>
+      <div class="section-header" style="cursor:pointer;" onclick="toggleFamilyExpand('${f.code}')">
+        <div class="member-name"><span id="family-caret-${f.code}">${expanded ? '▾' : '▸'}</span> ${escapeHtml(f.family_name)} <span class="form-hint">(code: ${escapeHtml(f.code)} · ${memberCount} member${memberCount === 1 ? '' : 's'})</span></div>
+        <button class="btn-danger btn-sm" onclick="event.stopPropagation(); deleteFamily('${f.code}')">Delete</button>
       </div>
-      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
-        <div class="form-hint" style="margin-bottom:4px;">🏨 Stay (hotel/accommodation)</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <input type="text" placeholder="Stay place name" value="${escapeHtml(f.stay_place_name || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-name-${f.code}">
-          <input type="url" placeholder="Google Maps link" value="${escapeHtml(f.stay_map_link || '')}" style="flex:1;min-width:160px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-link-${f.code}">
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
-          <input type="text" placeholder="Coordinator name" value="${escapeHtml(f.stay_coordinator_name || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-name-${f.code}">
-          <input type="tel" placeholder="Coordinator phone" value="${escapeHtml(f.stay_coordinator_phone || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-phone-${f.code}">
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
-          <input type="text" placeholder="Coordinator 2 name (optional)" value="${escapeHtml(f.stay_coordinator_name2 || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-name2-${f.code}">
-          <input type="tel" placeholder="Coordinator 2 phone" value="${escapeHtml(f.stay_coordinator_phone2 || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-phone2-${f.code}">
-          <button class="btn-secondary btn-sm" onclick="saveFamilyStay('${f.code}')">Save Stay</button>
-        </div>
-      </div>
-      ${(f.members || []).map(m => `
-        <div style="margin-top:8px;">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="min-width:150px;">${escapeHtml(m.name)} <span class="form-hint">(${escapeHtml(m.member_code)})</span></span>
-            ${attendingBadge(m.attending_status)}
-            <select onchange="saveAttending('${m.id}', this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;">
-              <option value="" ${!m.attending_status ? 'selected' : ''}>⏳ Pending</option>
-              <option value="attending" ${m.attending_status === 'attending' ? 'selected' : ''}>✅ Attending</option>
-              <option value="not_attending" ${m.attending_status === 'not_attending' ? 'selected' : ''}>🚫 Not Attending</option>
-            </select>
-            <input type="text" placeholder="Room no." value="${escapeHtml(m.room_no || '')}" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="room-${m.id}">
-            <button class="btn-secondary btn-sm" onclick="saveRoom('${m.id}')">Save Room</button>
-            <button class="btn-danger btn-sm" onclick="deleteMember('${m.id}','${f.code}')">Remove</button>
+      <div id="family-body-${f.code}" style="display:${expanded ? 'block' : 'none'};">
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+          <div class="form-hint" style="margin-bottom:4px;">🏨 Stay (hotel/accommodation)</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="text" placeholder="Stay place name" value="${escapeHtml(f.stay_place_name || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-name-${f.code}">
+            <input type="url" placeholder="Google Maps link" value="${escapeHtml(f.stay_map_link || '')}" style="flex:1;min-width:160px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-link-${f.code}">
           </div>
-          ${m.remarks ? `<div class="form-hint" style="margin-top:2px;">📝 ${escapeHtml(m.remarks)}</div>` : ''}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+            <input type="text" placeholder="Coordinator name" value="${escapeHtml(f.stay_coordinator_name || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-name-${f.code}">
+            <input type="tel" placeholder="Coordinator phone" value="${escapeHtml(f.stay_coordinator_phone || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-phone-${f.code}">
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+            <input type="text" placeholder="Coordinator 2 name (optional)" value="${escapeHtml(f.stay_coordinator_name2 || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-name2-${f.code}">
+            <input type="tel" placeholder="Coordinator 2 phone" value="${escapeHtml(f.stay_coordinator_phone2 || '')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="stay-coord-phone2-${f.code}">
+            <button class="btn-secondary btn-sm" onclick="saveFamilyStay('${f.code}')">Save Stay</button>
+          </div>
         </div>
-      `).join('')}
-      <div style="margin-top:10px;">
-        <button class="btn-secondary btn-sm" onclick="addMemberPrompt('${f.code}')">+ Add Member</button>
+        ${(f.members || []).map(m => `
+          <div style="margin-top:8px;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="min-width:150px;">${escapeHtml(m.name)} <span class="form-hint">(${escapeHtml(m.member_code)})</span></span>
+              ${attendingBadge(m.attending_status)}
+              <select onchange="saveAttending('${m.id}', this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;">
+                <option value="" ${!m.attending_status ? 'selected' : ''}>⏳ Pending</option>
+                <option value="attending" ${m.attending_status === 'attending' ? 'selected' : ''}>✅ Attending</option>
+                <option value="not_attending" ${m.attending_status === 'not_attending' ? 'selected' : ''}>🚫 Not Attending</option>
+              </select>
+              <input type="text" placeholder="Room no." value="${escapeHtml(m.room_no || '')}" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;" id="room-${m.id}">
+              <button class="btn-secondary btn-sm" onclick="saveRoom('${m.id}')">Save Room</button>
+              <button class="btn-danger btn-sm" onclick="deleteMember('${m.id}','${f.code}')">Remove</button>
+            </div>
+            ${m.remarks ? `<div class="form-hint" style="margin-top:2px;">📝 ${escapeHtml(m.remarks)}</div>` : ''}
+          </div>
+        `).join('')}
+        <div style="margin-top:10px;">
+          <button class="btn-secondary btn-sm" onclick="addMemberPrompt('${f.code}')">+ Add Member</button>
+        </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function openAddFamilyModal() {
