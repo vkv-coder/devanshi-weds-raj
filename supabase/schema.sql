@@ -715,6 +715,34 @@ $$;
 revoke all on function dr_admin_set_room(uuid, uuid, text) from public;
 grant execute on function dr_admin_set_room(uuid, uuid, text) to anon, authenticated;
 
+create or replace function dr_admin_rename_family(p_token uuid, p_code text, p_family_name text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  update dr_families set family_name = p_family_name where code = lower(trim(p_code));
+end;
+$$;
+revoke all on function dr_admin_rename_family(uuid, text, text) from public;
+grant execute on function dr_admin_rename_family(uuid, text, text) to anon, authenticated;
+
+create or replace function dr_admin_rename_member(p_token uuid, p_member_id uuid, p_name text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform dr_assert_admin(p_token);
+  update dr_members set name = p_name where id = p_member_id;
+end;
+$$;
+revoke all on function dr_admin_rename_member(uuid, uuid, text) from public;
+grant execute on function dr_admin_rename_member(uuid, uuid, text) to anon, authenticated;
+
 create or replace function dr_admin_set_family_stay(
   p_token uuid, p_code text, p_stay_place_name text, p_stay_map_link text,
   p_stay_coordinator_name text default null, p_stay_coordinator_phone text default null,

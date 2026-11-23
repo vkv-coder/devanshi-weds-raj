@@ -173,7 +173,10 @@ function renderFamiliesList() {
     <div class="member-row">
       <div class="section-header" style="cursor:pointer;" onclick="toggleFamilyExpand('${f.code}')">
         <div class="member-name"><span id="family-caret-${f.code}">${expanded ? '▾' : '▸'}</span> ${escapeHtml(f.family_name)} <span class="form-hint">(code: ${escapeHtml(f.code)} · ${memberCount} member${memberCount === 1 ? '' : 's'})</span></div>
-        <button class="btn-danger btn-sm" onclick="event.stopPropagation(); deleteFamily('${f.code}')">Delete</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-secondary btn-sm" onclick="event.stopPropagation(); renameFamilyPrompt('${f.code}', '${escapeHtml(f.family_name).replace(/'/g, "\\'")}')">Edit</button>
+          <button class="btn-danger btn-sm" onclick="event.stopPropagation(); deleteFamily('${f.code}')">Delete</button>
+        </div>
       </div>
       <div id="family-body-${f.code}" style="display:${expanded ? 'block' : 'none'};">
         <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
@@ -196,6 +199,7 @@ function renderFamiliesList() {
           <div style="margin-top:8px;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="min-width:150px;">${escapeHtml(m.name)} <span class="form-hint">(${escapeHtml(m.member_code)})</span></span>
+              <button class="btn-secondary btn-sm" onclick="renameMemberPrompt('${m.id}', '${escapeHtml(m.name).replace(/'/g, "\\'")}')">✏️ Edit Name</button>
               ${attendingBadge(m.attending_status)}
               <select onchange="saveAttending('${m.id}', this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;">
                 <option value="" ${!m.attending_status ? 'selected' : ''}>⏳ Pending</option>
@@ -244,6 +248,24 @@ async function createFamily() {
   if (error) { errEl.textContent = error.message; return; }
   closeModal();
   showToast('✅ Family added');
+  loadFamilies();
+}
+
+async function renameFamilyPrompt(code, currentName) {
+  const name = prompt('Family name:', currentName);
+  if (name === null || !name.trim() || name.trim() === currentName) return;
+  const { error } = await db.rpc('dr_admin_rename_family', { p_token: adminToken(), p_code: code, p_family_name: name.trim() });
+  if (error) { showToast(error.message, 'error'); return; }
+  showToast('✅ Family renamed');
+  loadFamilies();
+}
+
+async function renameMemberPrompt(memberId, currentName) {
+  const name = prompt('Member name:', currentName);
+  if (name === null || !name.trim() || name.trim() === currentName) return;
+  const { error } = await db.rpc('dr_admin_rename_member', { p_token: adminToken(), p_member_id: memberId, p_name: name.trim() });
+  if (error) { showToast(error.message, 'error'); return; }
+  showToast('✅ Name updated');
   loadFamilies();
 }
 
