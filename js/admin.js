@@ -122,6 +122,7 @@ function goAdminTab(tabId) {
 
 // ---------- Families ----------
 async function renderFamiliesTab(container) {
+  _expandedFamilies.clear();
   container.innerHTML = `
     <div class="card">
       <div class="section-header"><h3>Families</h3><button class="btn-primary btn-sm" onclick="openAddFamilyModal()">+ Add Family</button></div>
